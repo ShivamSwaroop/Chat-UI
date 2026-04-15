@@ -80,7 +80,7 @@ export default function ChatWindow() {
               }
               botMessage += chunk;
 
-              await new Promise((res) => setTimeout(res, 70));
+              await new Promise((res) => setTimeout(res, 130));
 
               setMessages((prevMessage) => { 
                 const updated = [...prevMessage];
