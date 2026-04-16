@@ -3,6 +3,70 @@ import Chat from "@/models/chat";
 
 export const revalidate = 0;
 
+//Decide if search is needed or not
+async function shouldSearch(query: string){
+  try{
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        messages: [
+          {
+            role: "system",
+            content:  `Answer ONLY "yes" or "no".
+            Say "yes" if the query involves:
+            - weather
+            - news
+            - current events
+            - live data
+            - prices
+            - scores
+            - location-based info
+            Otherwise say "no".`
+          },
+          {
+            role: "user",
+            content: query
+          }
+        ],
+        max_tokens:5,
+      }),
+    });
+    const data = await res.json();
+    const decision =  data.choices?.[0]?.message?.content?.toLowerCase() || "";
+    return decision .includes("yes");
+  }catch{
+    return false;
+  }
+}
+
+//Web search
+async function searchWeb(query: string){
+  try{
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-KEY": process.env.WEB_SEARCH_API!
+      },
+      body: JSON.stringify({q: query}),
+    });
+
+    const data = await res.json();
+    return data.organic?.slice(0, 5).map((item: any)=>({
+      title: item.title,
+      snippet: item.snippet,
+      link: item.link
+    })) || [];
+  }catch{
+    return []
+  }
+}
+
 export async function POST(req: Request){
     try {
         await connectDB();
@@ -10,8 +74,21 @@ export async function POST(req: Request){
         const userMessage = body.message;
         const chatId = body.chatId;
 
-      const groqResponse = await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
+        const forceKeywords = ["latest","weather", "today", "now", "news", "price", "score"];
+        const forceSearch = forceKeywords.some(word =>userMessage.toLowerCase().includes(word));
+        
+        const needSearch = forceSearch || await shouldSearch(userMessage);
+        
+        let context ="";
+
+        if(needSearch){
+          const results = await searchWeb(userMessage);
+          
+          context = results.map((body: any, num: number)=>`Source ${num+1}: Title: ${body.title}
+          Summary: ${body.snippet} Link: ${body.link}`).join("\n\n");
+        }
+
+      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions",
         {
           method: "POST",
           headers: {
@@ -24,14 +101,13 @@ export async function POST(req: Request){
               {
                 role: "system",
                 content: `You are Echo, a smart AI assistant.
-                Format your answers clearly:
-                - Use headings where helpful
-                - Use bullet points for lists
-                - Keep paragraphs short
-                - Avoid large dense text blocks
-                - Make responses easy to read on screen`,
+                - If web results are provided, you MUST use them
+                - Do NOT say you lack real-time data
+                - Answer based on the provided information
+                - Give structured answers`
               },
-              { role: "user", content: userMessage },
+              { role: "user", content: context ? `Question: ${userMessage} Web Results: ${context}
+              Answer using this results`: userMessage },
             ],
             stream: true,
           }),
@@ -99,8 +175,8 @@ export async function POST(req: Request){
       }catch(error){
         console.error("DB save Error:", error);
       }
+      controller.enqueue(encoder.encode(`_CHAT_ID_:${chat?._id}`));
       controller.close();
-      controller.enqueue(encoder.encode(`_CHAT_ID_: ${chat?._id}`))
     }
   }),
 {

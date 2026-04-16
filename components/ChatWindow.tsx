@@ -71,7 +71,7 @@ export default function ChatWindow() {
               const chunk = decoder.decode(value, {stream: true});
 
               if(chunk.includes("_CHAT_ID_")){
-                const id = chunk.split("_CHAT_ID_")[1];
+                const id = chunk.split("_CHAT_ID_:")[1];
 
                 if(id && !currentChatId){
                   setCurrentChatId(id.trim());
