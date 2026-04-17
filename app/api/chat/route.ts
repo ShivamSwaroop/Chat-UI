@@ -67,6 +67,7 @@ async function searchWeb(query: string){
   }
 }
 
+//Main LLM 
 export async function POST(req: Request){
     try {
         await connectDB();
@@ -88,6 +89,38 @@ export async function POST(req: Request){
           Summary: ${body.snippet} Link: ${body.link}`).join("\n\n");
         }
 
+        const detailedKeywords = [
+  "detail",
+  "detailed",
+  "full",
+  "explain",
+  "explanation",
+  "in depth",
+  "deep",
+  "elaborate",
+  "comprehensive",
+  "step by step",
+  "guide",
+  "complete",
+];
+
+let isDetailed = detailedKeywords.some(word=>userMessage.toLowerCase().includes(word));
+
+const systemPrompt = isDetailed ? `You are Echo, a smart AI assistant.
+  Give a detailed, structured, and comprehensive answer.
+  - Use headings and bullet points
+  - Explain concepts clearly
+  - Provide examples if helpful
+  - Be thorough but readable
+  -answer in 40-50 lines maximum`
+  : `You are Echo, a smart AI assistant.
+  Give a concise and meaningful answer in 6–10 lines maximum.
+  - Avoid long explanations
+  - Focus on clarity and usefulness
+  - No unnecessary details`; 
+
+  if (userMessage.length > 150) isDetailed = true;
+
       const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions",
         {
           method: "POST",
@@ -100,14 +133,13 @@ export async function POST(req: Request){
             messages: [
               {
                 role: "system",
-                content: `You are Echo, a smart AI assistant.
-                - If web results are provided, you MUST use them
-                - Do NOT say you lack real-time data
-                - Answer based on the provided information
-                - Give structured answers`
+                content: systemPrompt
               },
-              { role: "user", content: context ? `Question: ${userMessage} Web Results: ${context}
-              Answer using this results`: userMessage },
+              { role: "user", content: context ? `Question: ${userMessage} 
+              ${isDetailed ? "Give a detailed answer." : "Give a short answer (6-10 lines)."}
+              Web Results: ${context}
+              Answer using this results`: `${userMessage} 
+              ${isDetailed ? "Give a detailed answer." : "Give a short answer (6-10 lines)."}` },
             ],
             stream: true,
           }),
