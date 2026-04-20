@@ -1,5 +1,8 @@
 import { connectDB } from "@/lib/mongoose";
-import Chat from "@/models/chat";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import Thread from "@/models/thread";
+import Message from "@/models/message";
 
 export const revalidate = 0;
 
@@ -71,9 +74,27 @@ async function searchWeb(query: string){
 export async function POST(req: Request){
     try {
         await connectDB();
+        const session = await getServerSession(authOptions);
+        if(!session){
+          return new Response("Unauthorized", { status: 401 });
+        }
+        const userId = session.user.id;
         const body = await req.json();
         const userMessage = body.message;
         const chatId = body.chatId;
+
+        let previousMessages: any[] = [];
+        if(chatId){
+         previousMessages = await Message.find({ threadId: chatId }).sort({ createdAt: -1}).limit(4)
+        .lean();
+        previousMessages = previousMessages.reverse();
+        };
+        const formattedHistory = previousMessages.map((msg)=>({
+          role: msg.role,
+          content: msg.content
+        }));
+        console.log("CHAT ID:", chatId);
+        console.log("PREVIOUS MESSAGES:", previousMessages);
 
         const forceKeywords = ["latest","weather", "today", "now", "news", "price", "score"];
         const forceSearch = forceKeywords.some(word =>userMessage.toLowerCase().includes(word));
@@ -90,34 +111,32 @@ export async function POST(req: Request){
         }
 
         const detailedKeywords = [
-  "detail",
-  "detailed",
-  "full",
-  "explain",
-  "explanation",
-  "in depth",
-  "deep",
-  "elaborate",
-  "comprehensive",
-  "step by step",
-  "guide",
-  "complete",
-];
+          "detail",
+          "detailed",
+          "full",
+          "explain",
+          "explanation",
+          "in depth",
+          "deep",
+          "elaborate",
+          "comprehensive",
+          "step by step",
+          "guide",
+          "complete",
+        ];
 
 let isDetailed = detailedKeywords.some(word=>userMessage.toLowerCase().includes(word));
 
-const systemPrompt = isDetailed ? `You are Echo, a smart AI assistant.
-  Give a detailed, structured, and comprehensive answer.
-  - Use headings and bullet points
-  - Explain concepts clearly
-  - Provide examples if helpful
-  - Be thorough but readable
-  -answer in 40-50 lines maximum`
-  : `You are Echo, a smart AI assistant.
-  Give a concise and meaningful answer in 6–10 lines maximum.
-  - Avoid long explanations
-  - Focus on clarity and usefulness
-  - No unnecessary details`; 
+  const systemPrompt = `You are Echo, a smart AI assistant.
+
+  IMPORTANT:
+ - ALWAYS resolve pronouns like "it", "they", "that" using previous conversation
+  - Use context when relevant
+  - Do not ask for clarification if context exists
+
+  ${isDetailed
+    ? "Give a detailed structured answer"
+    : "Give a concise answer"}`;
 
   if (userMessage.length > 150) isDetailed = true;
 
@@ -135,20 +154,33 @@ const systemPrompt = isDetailed ? `You are Echo, a smart AI assistant.
                 role: "system",
                 content: systemPrompt
               },
-              { role: "user", content: context ? `Question: ${userMessage} 
-              ${isDetailed ? "Give a detailed answer." : "Give a short answer (6-10 lines)."}
-              Web Results: ${context}
-              Answer using this results`: `${userMessage} 
-              ${isDetailed ? "Give a detailed answer." : "Give a short answer (6-10 lines)."}` },
+
+             { role: "user",
+              content: `Conversation so far:
+              ${formattedHistory.map(m => `${m.role}: ${m.content}`).join("\n")}
+              Current question: ${userMessage}
+              Instruction:
+              - Resolve references like "it", "they", "that" using the conversation above
+              - Answer accordingly
+              
+              ${context ? `Web Results:\n${context}` : ""}
+              ${isDetailed ? "Give a detailed answer." : "Give a short answer (6-10 lines)."}`}
             ],
             stream: true,
           }),
         },
       );
+      console.log("Groq status:", groqResponse.status);
+      
+      if (!groqResponse.ok) {
+        const errText = await groqResponse.text();
+        console.error("Groq API Error:", errText);
+        return new Response("LLM Error", { status: 500 });}
+
       const encoder = new TextEncoder();
 
       let fullResponse = "";
-      let chat: any;
+      
   return new Response(new ReadableStream({
     async start(controller){
       const reader = groqResponse.body?.getReader();
@@ -157,7 +189,7 @@ const systemPrompt = isDetailed ? `You are Echo, a smart AI assistant.
       if(!reader) return;
 
       let buffer = "";
-
+      let thread;
       while(true){ 
         const { done, value } = await reader.read();
         if(done) break;
@@ -185,29 +217,33 @@ const systemPrompt = isDetailed ? `You are Echo, a smart AI assistant.
         }
       }
       try{
-        if(chatId){
-          chat = await Chat.findById(chatId);
-
-          if(chat){
-            chat.messages.push(
-              { content: userMessage, role: "user" },
-              { content: fullResponse, role: "assistant" }
-            );
-            await chat.save();
+         if (chatId) {
+          thread = await Thread.findOne({ _id: chatId, userId });
+          if (!thread) {
+            throw new Error("Thread not found or unauthorized");
           }
-        }else{
-          chat = await Chat.create({
+        } else {
+          thread = await Thread.create({
             title: userMessage.slice(0, 30),
-            messages: [
-              { content: userMessage, role: "user"},
-              { content: fullResponse, role: "assistant"}
-            ]
-          })
+            userId,
+          });
         }
+        await Message.create([
+          {
+            threadId: thread._id,
+            role: "user",
+            content: userMessage,
+          },
+          {
+            threadId: thread._id,
+            role: "assistant",
+            content: fullResponse,
+          },
+        ]);
       }catch(error){
         console.error("DB save Error:", error);
       }
-      controller.enqueue(encoder.encode(`_CHAT_ID_:${chat?._id}`));
+      controller.enqueue(encoder.encode(`_CHAT_ID_:${thread._id}`));
       controller.close();
     }
   }),
