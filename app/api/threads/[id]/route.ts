@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }){
+export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }){
   await connectDB();
   const session = await getServerSession(authOptions);
 
@@ -12,7 +12,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { title } = await req.json();
 
-  const { id } = await params;
+  const { id } = await context.params;
 
   const thread = await Thread.findOneAndUpdate(
     {_id: id, userId: session.user.id},
@@ -23,13 +23,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return Response.json(thread);
 };
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }){
+export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }){
   await connectDB();
   const session = await getServerSession(authOptions);
 
   if(!session) return Response.json({ error: "unauthorized" }, { status: 401});
 
-  const { id } = await params;
+  const { id } = await context.params;
 
    const result = await Thread.deleteOne({ _id: id, userId: session.user.id});
 
