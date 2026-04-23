@@ -8,6 +8,7 @@ import { GiEchoRipples } from "react-icons/gi";
 import { GiHamburgerMenu } from "react-icons/gi";
 import { useSession } from "next-auth/react";
 import { signOut, signIn } from "next-auth/react";
+import { FaPaperclip } from "react-icons/fa";
 
 type Message = {
     id: string;
@@ -26,6 +27,7 @@ export default function ChatWindow() {
     const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [newTitle, setNewTitle] = useState("");
+    const fileRef = useRef<HTMLInputElement | null>(null);
 
 
     function scrollToBottom(){
@@ -182,6 +184,21 @@ export default function ChatWindow() {
 
           setEditingId(null);
           fetchChats();
+        };
+
+        async function handleFileUpload(
+          e: React.ChangeEvent<HTMLInputElement>,
+        ) {
+          const file = e.target.files?.[0];
+          if (!file) return;
+
+          const formData = new FormData();
+          formData.append("file", file);
+
+          await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
         }
     
 
@@ -204,31 +221,33 @@ export default function ChatWindow() {
               <div>
                 {session ? (
                   <>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-8 h-8 rounded-full ${color} flex items-center justify-center overflow-hidden`}>
-                        {session.user?.image ? (
-                          <img
-                            src={session.user.image}
-                            alt="avatar"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <span className="text-sm font-semibold text-white">
-                            {session.user?.name?.charAt(0).toUpperCase()}
-                          </span>
-                        )}
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-8 h-8 rounded-full ${color} flex items-center justify-center overflow-hidden`}
+                        >
+                          {session.user?.image ? (
+                            <img
+                              src={session.user.image}
+                              alt="avatar"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-sm font-semibold text-white">
+                              {session.user?.name?.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-sm text-gray-300">
+                          {session.user?.name}
+                        </span>
                       </div>
-                      <span className="text-sm text-gray-300">
-                        {session.user?.name}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => signOut()}
-                      className="bg-black px-3 py-1 rounded text-sm "
-                    >
-                      Logout
-                    </button>
+                      <button
+                        onClick={() => signOut()}
+                        className="bg-black px-3 py-1 rounded text-sm "
+                      >
+                        Logout
+                      </button>
                     </div>
                   </>
                 ) : (
@@ -265,12 +284,9 @@ export default function ChatWindow() {
                     {messages.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 px-4">
                         <h1 className="text-4xl font-semibold text-black">
-                          Hi, I'm{" "}
-                          <span className="text-3xl font-semibold mb-3 bg-clip-text text-transparent">
-                            Echo
-                          </span>
+                          Hi, I'm ECHO
                         </h1>
-                        <p className="text-md max-w-md mt-4 text-gray-400 leading-relaxed">
+                        <p className="text-md italic max-w-md mt-4 text-gray-400 leading-relaxed">
                           I turn your questions into conversations. What would
                           you like to explore?
                         </p>
@@ -296,7 +312,8 @@ export default function ChatWindow() {
 
                 <div className="border-t border-gray-700 p-4">
                   <div className="max-w-3xl mx-auto">
-                    <InputArea onSend={handleSend} />
+                    <InputArea onSend={handleSend} 
+                    onFileUpload={handleFileUpload}/>
                   </div>
                 </div>
               </div>

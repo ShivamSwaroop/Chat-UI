@@ -3,6 +3,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Thread from "@/models/thread";
 import Message from "@/models/message";
+import Embedding from "@/models/embedding";
+import { HfInference } from "@huggingface/inference";
+import { normalizeEmbedding } from "@/lib/embedding";
+
+const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+
+
 
 export const revalidate = 0;
 
@@ -70,6 +77,13 @@ async function searchWeb(query: string){
   }
 }
 
+function cosineSimilarity(a: number[], b: number[]) {
+  const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
+  const magA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+  const magB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+  return dot / (magA * magB);
+}
+
 //Main LLM 
 export async function POST(req: Request){
     try {
@@ -82,6 +96,32 @@ export async function POST(req: Request){
         const body = await req.json();
         const userMessage = body.message;
         const chatId = body.chatId;
+        let ragContext = "";
+
+       try {
+         const queryEmbedding = await hf.featureExtraction({
+           model: "sentence-transformers/all-MiniLM-L6-v2",
+           inputs: userMessage,
+         });
+
+         const queryVector = normalizeEmbedding(queryEmbedding)
+           
+
+         const allEmbeddings = await Embedding.find({ userId }).limit(200);
+
+         const topChunks = allEmbeddings
+           .map((e: any) => ({
+             text: e.text,
+             score: cosineSimilarity(queryVector, e.embedding),
+           }))
+           .sort((a, b) => b.score - a.score)
+           .slice(0, 5);
+
+         ragContext = topChunks.map((c) => c.text).join("\n");
+       } catch (err) {
+         console.log("RAG error", err);
+       }
+
 
         let previousMessages: any[] = [];
         if(chatId){
@@ -158,10 +198,14 @@ let isDetailed = detailedKeywords.some(word=>userMessage.toLowerCase().includes(
              { role: "user",
               content: `Conversation so far:
               ${formattedHistory.map(m => `${m.role}: ${m.content}`).join("\n")}
+
+              ${ragContext ? `Document Context:\n${ragContext}\n` : ""}
+
               Current question: ${userMessage}
+
               Instruction:
               - Resolve references like "it", "they", "that" using the conversation above
-              - Answer accordingly
+              - Use document context if relevant
               
               ${context ? `Web Results:\n${context}` : ""}
               ${isDetailed ? "Give a detailed answer." : "Give a short answer (6-10 lines)."}`}
@@ -253,7 +297,9 @@ let isDetailed = detailedKeywords.some(word=>userMessage.toLowerCase().includes(
     "Transfer-Encoding": "chunked",
     "Cache-Control": "no-cache"
   }
-});
+}); 
+   console.log("USER ID:", userId);
+   console.log("EMBEDDINGS COUNT:", await Embedding.countDocuments({ userId }));
     }catch(error){
       console.error("API error: " , error);
       return new Response("Error", {status: 500})
