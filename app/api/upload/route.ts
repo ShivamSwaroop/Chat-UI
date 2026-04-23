@@ -53,7 +53,9 @@ export async function POST(req: NextRequest){
       content: extractedText,
     });
 
-    await fetch(`${https://chat-ui-chi-five.vercel.app/}/api/process-document`, {
+    const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}`;
+
+    await fetch(`${baseUrl}/api/process-document`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
