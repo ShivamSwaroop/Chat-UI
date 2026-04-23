@@ -53,7 +53,7 @@ export async function POST(req: NextRequest){
       content: extractedText,
     });
 
-    await fetch("/api/process-document", {
+    await fetch(`${https://chat-ui-chi-five.vercel.app/}/api/process-document`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest){
     });
 
     return Response.json({ success: true, fileName: file.name });
-    
+
   } catch (err: any) {
     console.error("UPLOAD ERROR:", err);
     return Response.json(
