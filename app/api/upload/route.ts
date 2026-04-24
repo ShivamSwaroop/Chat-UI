@@ -47,21 +47,35 @@ export async function POST(req: NextRequest){
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    console.log("STEP 1: File received");
+
+    console.log("STEP 2: Extracting text...");
+
+    console.log("STEP 3: Text length:", extractedText.length);
+
+    console.log("STEP 4: Saving document...");
+
     const doc = await Document.create({
       userId: session.user.id,
       fileName: file.name,
       content: extractedText,
     });
 
+    console.log("STEP 5: Document saved with ID:", doc._id);
+
+    console.log("STEP 6: Calling process-document API...");
+
     const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}`;
 
-    await fetch(`${baseUrl}/api/process-document`, {
+    const res = await fetch(`${baseUrl}/api/process-document`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({ documentId: doc._id }),
     });
+
+    console.log("STEP 7: process-document status:", res.status);
 
     return Response.json({ success: true, fileName: file.name });
 

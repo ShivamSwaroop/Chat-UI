@@ -8,7 +8,6 @@ import { GiEchoRipples } from "react-icons/gi";
 import { GiHamburgerMenu } from "react-icons/gi";
 import { useSession } from "next-auth/react";
 import { signOut, signIn } from "next-auth/react";
-import { FaPaperclip } from "react-icons/fa";
 
 type Message = {
     id: string;
@@ -27,7 +26,6 @@ export default function ChatWindow() {
     const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [newTitle, setNewTitle] = useState("");
-    const fileRef = useRef<HTMLInputElement | null>(null);
 
 
     function scrollToBottom(){
@@ -64,6 +62,7 @@ export default function ChatWindow() {
             const decoder = new TextDecoder();
             
             let botMessage = "";
+            let buffer = "";
 
             setMessages((prevMessages) => [...prevMessages, {
               id: (Date.now() +1).toString(),
@@ -72,41 +71,57 @@ export default function ChatWindow() {
               timestamp: new Date()
             }]);
 
-            while (true){
-              const {done, value} = await reader.read();
-              if(done) break;
-              const chunk = decoder.decode(value, {stream: true});
+           while (true) {
+             const { done, value } = await reader.read();
+             if (done) break;
 
-              if(chunk.includes("_CHAT_ID_")){
-                const id = chunk.split("_CHAT_ID_:")[1];
+             const chunk = decoder.decode(value, { stream: true });
+             buffer += chunk;
 
-                if(id){
-                  const cleanId = id.trim();
-                  if(!currentThreadRef.current){
-                    currentThreadRef.current = cleanId;
-                    setCurrentThreadId(cleanId);
-                    fetchChats();}
-                }
-                continue;
-              }
-              botMessage += chunk;
+             if (buffer.includes("_CHAT_ID_:")) {
+               const parts = buffer.split("_CHAT_ID_:");
+               const textPart = parts[0];
+               const idPart = parts[1];
 
-              await new Promise((res) => setTimeout(res, 130));
+               if (idPart) {
+                 const cleanId = idPart.trim();
 
-              setMessages((prevMessage) => { 
-                const updated = [...prevMessage];
-                const lastIndex = updated.length - 1;
+                 if (!currentThreadRef.current) {
+                   currentThreadRef.current = cleanId;
+                   setCurrentThreadId(cleanId);
+                   fetchChats();
+                 }
+               }
 
-                if(lastIndex >= 0) {
-                  updated[lastIndex]= {...updated[lastIndex], content: botMessage}
-                }
-                return updated;
-              })
-            }
+               buffer = textPart;
+             }
+
+             await new Promise((res) => setTimeout(res, 130));
+
+             if (buffer) {
+               botMessage += buffer;
+
+               setMessages((prevMessages) => {
+                 const updated = [...prevMessages];
+                 const lastIndex = updated.length - 1;
+
+                 if (lastIndex >= 0) {
+                   updated[lastIndex] = {
+                     ...updated[lastIndex],
+                     content: botMessage,
+                   };
+                 }
+
+                 return updated;
+               });
+
+               buffer = "";
+             }
+           }
              setIsLoading(false);
              console.log("Sending with Thread:", currentThreadRef.current);
 
-        }catch (error){
+        } catch (error){
 
             setMessages((prevMessages) => [...prevMessages, 
                 { id: Date.now().toString(), content: "Failed to get response. Please try again.", 
