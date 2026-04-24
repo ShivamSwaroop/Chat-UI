@@ -287,7 +287,8 @@ let isDetailed = detailedKeywords.some(word=>userMessage.toLowerCase().includes(
       }catch(error){
         console.error("DB save Error:", error);
       }
-      controller.enqueue(encoder.encode(`_CHAT_ID_:${thread._id}`));
+      if(thread?._id){
+      controller.enqueue(encoder.encode(`_CHAT_ID_:${thread._id}`));}
       controller.close();
     }
   }),
