@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/mongoose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Document from "@/models/document";
+import { processDocument } from "@/lib/process-document";
 
 export const runtime = "nodejs";
 
@@ -63,19 +64,11 @@ export async function POST(req: NextRequest){
 
     console.log("STEP 5: Document saved with ID:", doc._id);
 
-    console.log("STEP 6: Calling process-document API...");
+    console.log("STEP 6: Processing document internally...");
 
-    const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}`;
+    await processDocument(doc._id.toString());
 
-    const res = await fetch(`${baseUrl}/api/process-document`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ documentId: doc._id }),
-    });
-
-    console.log("STEP 7: process-document status:", res.status);
+    console.log("STEP 7: Processing completed");
 
     return Response.json({ success: true, fileName: file.name });
 
